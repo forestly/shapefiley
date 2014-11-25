@@ -54,16 +54,10 @@ angular.module('shapefileyApp', ['ngRoute', 'angularFileUpload'])
         };
     })
     .controller('ShowShapefileCtrl', function($scope, $http, $routeParams) {
-        // (function tick() {
-        //     $scope.data = Data.query(function(){
-        //         $timeout(tick, 1000);
-        //     });
-        // })();
-
         $scope.shapefile = {}
 
         var mapOptions = {
-            zoom: 5,
+            zoom: 4,
             center: new google.maps.LatLng(37.09024, -95.712891),
             mapTypeId: google.maps.MapTypeId.TERRAIN
         };

@@ -27,9 +27,8 @@ const (
 )
 
 var (
-	WorkDatabase string
-	db           gorm.DB
-	workDb       gorm.DB
+	db     gorm.DB
+	workDb gorm.DB
 )
 
 type Shapefile struct {
@@ -71,10 +70,10 @@ func renderJson(w http.ResponseWriter, page interface{}) {
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
-		err := r.ParseMultipartForm(100000)
+		err := r.ParseMultipartForm(10000000)
 		if err != nil {
-			// http.Error(w, err.Error(), http.StatusInternalServerError)
 			log.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -128,7 +127,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 			go processFile(shapefile)
 			renderJson(w, shapefile)
-			return
+			return // We only deal with single files.
 		}
 	}
 }
