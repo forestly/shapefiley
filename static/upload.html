@@ -1,0 +1,23 @@
+<div ng-controller="UploadCtrl">
+    <h1>Upload {{ uploadProgress }}%</h1>
+
+    <input type="file" multiple ng-file-select="onFileSelect($files)">
+    <div ng-file-drop="onFileSelect($files)" ng-file-drag-over-class="optional-css-class-name-or-function"
+         ng-show="dropSupported">drop files here</div>
+    <div ng-file-drop-available="dropSupported=true"
+         ng-show="!dropSupported">HTML5 Drop File is not supported!</div>
+    <button ng-click="upload.abort()">Cancel Upload</button>
+
+
+    <table class="table">
+        <tr>
+            <th>Name</th>
+        </tr>
+
+        <tr ng-repeat="sf in shapeFiles">
+            <td><a ng-href="/#/shapefiles/{{sf.Id}}">{{ sf.Name }}</a></td>
+        </tr>
+
+    </table>
+
+</div>

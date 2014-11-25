@@ -127,10 +127,9 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			log.Println("Last", shapefile)
 
 			go processFile(shapefile)
+			renderJson(w, shapefile)
+			return
 		}
-
-		log.Println("upload")
-		renderJson(w, nil)
 	}
 }
 
