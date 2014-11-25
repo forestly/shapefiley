@@ -10,7 +10,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -21,32 +23,37 @@ const (
 const (
 	Started  = "started"
 	Finished = "finished"
+	Failed   = "failed"
 )
 
 var (
-	db gorm.DB
+	WorkDatabase string
+	db           gorm.DB
+	workDb       gorm.DB
 )
 
 type Shapefile struct {
-	Id        int64
-	Status    string
-	Filename  string    `json:"-"`
+	Id     int64
+	Name   string
+	Status string
+
+	ZipFilename string `json:"-"`
+
 	CreatedAt time.Time `json:"-"`
-	Geom      string    `sql:"-"`
+	Geom      []string  `sql:"-"`
 }
 
 func (t *Shapefile) GetGeodata() {
-	t.Geom = "yay done"
-	// rows, err := db.Table("tree_geoms").Select("ST_AsGeoJSON(ST_CollectionExtract(geom, 3)) as geom2").Where("latin_name = ?", t.LatinName).Rows()
-	// if err != nil {
-	// 	log.Println(err)
-	// }
+	rows, err := workDb.Table(t.Name).Select("ST_AsGeoJSON(ST_CollectionExtract(geom, 3)) as geom2").Rows()
+	if err != nil {
+		log.Println(err)
+	}
 
-	// for rows.Next() {
-	// 	var geodata string
-	// 	rows.Scan(&geodata)
-	// 	t.GeomData = append(t.GeomData, geodata)
-	// }
+	for rows.Next() {
+		var geodata string
+		rows.Scan(&geodata)
+		t.Geom = append(t.Geom, geodata)
+	}
 }
 
 func renderJson(w http.ResponseWriter, page interface{}) {
@@ -74,11 +81,21 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		//get a ref to the parsed multipart form
 		m := r.MultipartForm
 
-		log.Println(m)
-
 		//get the *fileheaders
 		files := m.File["file"]
 		for i, _ := range files {
+			log.Println("Iter", i)
+
+			name := strings.Split(files[i].Filename, ".")
+			shapefile := Shapefile{
+				Name:   name[0],
+				Status: Started,
+			}
+
+			db.Create(&shapefile)
+
+			log.Println("First", shapefile)
+
 			//for each fileheader, get a handle to the actual file
 			file, err := files[i].Open()
 			defer file.Close()
@@ -87,14 +104,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			//create destination file making sure the path is writeable.
-			shapefile := Shapefile{
-				Status: Started,
-			}
-			db.Create(&shapefile)
 
 			filename := TmpLocation + "/" + strconv.FormatInt(shapefile.Id, 10) + "_" + files[i].Filename
-			log.Println(filename)
 
 			dst, err := os.Create(filename)
 			defer dst.Close()
@@ -109,8 +120,12 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			shapefile.Filename = dst.Name()
+
+			shapefile.ZipFilename = dst.Name()
 			db.Save(&shapefile)
+
+			log.Println("Last", shapefile)
+
 			go processFile(shapefile)
 		}
 
@@ -120,6 +135,29 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func processFile(shapefile Shapefile) {
+	var err error
+
+	dir, _ := os.Getwd()
+	log.Println(dir)
+
+	s2pcmd := exec.Command(dir+"/worker.sh", shapefile.ZipFilename, shapefile.Name)
+
+	err = s2pcmd.Start()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("Waiting for command to finish for:", shapefile)
+	err = s2pcmd.Wait()
+	if err != nil {
+		log.Printf("Command finished with error: %v", err)
+		shapefile.Status = Failed
+		db.Save(&shapefile)
+		return
+	}
+
+	shapefile.Status = Finished
+	db.Save(&shapefile)
 }
 
 func showShapefileHandler(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +184,11 @@ func init() {
 
 	log.Println("Database:", databaseUrl)
 
+	workDatabaseUrl := os.Getenv("SHAPEFILEY_WORK_DATABASE_NAME")
+	if workDatabaseUrl == "" {
+		workDatabaseUrl = "user=ayerra dbname=shapefiley_work_development sslmode=disable"
+	}
+
 	var err error
 	db, err = gorm.Open("postgres", databaseUrl)
 	if err != nil {
@@ -153,6 +196,12 @@ func init() {
 	}
 
 	db.AutoMigrate(&Shapefile{})
+
+	workDb, err = gorm.Open("postgres", workDatabaseUrl)
+	if err != nil {
+		log.Println(err)
+	}
+
 }
 
 func main() {
