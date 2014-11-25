@@ -7,6 +7,8 @@ ADD . /go/src/github.com/forestly/shapefiley
 RUN cd /go/src/github.com/forestly/shapefiley && go get ./...
 RUN go install github.com/forestly/shapefiley
 
+RUN mkdir -p /tmp/shapefiley
+
 WORKDIR /go/src/github.com/forestly/shapefiley
 
 ENTRYPOINT /go/bin/shapefiley
