@@ -7,6 +7,7 @@ import (
 	"github.com/jinzhu/gorm"
 	_ "github.com/lib/pq"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -174,20 +175,39 @@ func showShapefileHandler(w http.ResponseWriter, r *http.Request) {
 	renderJson(w, shapefile)
 }
 
+func createWorkerSh() {
+	// Check for shp2pgsql
+	path, err := exec.LookPath("shp2pgsql")
+	if err != nil {
+		log.Fatal("installing shp2pgsql is in your future")
+	} else {
+		log.Println("shp2pgsql in", path)
+	}
+
+	workDatabaseCmd := os.Getenv("SHAPEFILEY_WORK_COMMAND")
+
+	commands := []string{
+		"#!/usr/bin/env bash",
+		fmt.Sprintf("cd %s", TmpLocation),
+		"unzip -a $1",
+		fmt.Sprintf("%s -s 4326 -I -c -W UTF-8 $2 $2 > $2.sql", path),
+		fmt.Sprintf("%s < $2.sql", workDatabaseCmd),
+	}
+	commandStr := strings.Join(commands, "\n")
+	ioutil.WriteFile("worker.sh", []byte(commandStr), 755)
+}
+
 func init() {
+	var err error
+
+	// Load the main database.
 	databaseUrl := os.Getenv("SHAPEFILEY_DATABASE_URL")
 	if databaseUrl == "" {
 		databaseUrl = "user=ayerra dbname=shapefiley_development sslmode=disable"
 	}
 
-	log.Println("Database:", databaseUrl)
+	log.Println("Main Database:", databaseUrl)
 
-	workDatabaseUrl := os.Getenv("SHAPEFILEY_WORK_DATABASE_NAME")
-	if workDatabaseUrl == "" {
-		workDatabaseUrl = "user=ayerra dbname=shapefiley_work_development sslmode=disable"
-	}
-
-	var err error
 	db, err = gorm.Open("postgres", databaseUrl)
 	if err != nil {
 		log.Println(err)
@@ -195,11 +215,21 @@ func init() {
 
 	db.AutoMigrate(&Shapefile{})
 
+	// Load the work database
+	workDatabaseUrl := os.Getenv("SHAPEFILEY_WORK_DATABASE_NAME")
+	if workDatabaseUrl == "" {
+		workDatabaseUrl = "user=ayerra dbname=shapefiley_work_development sslmode=disable"
+	}
+
 	workDb, err = gorm.Open("postgres", workDatabaseUrl)
 	if err != nil {
 		log.Println(err)
 	}
 
+	log.Println("Work Database:", workDatabaseUrl)
+
+	// Update the worker.sh script
+	createWorkerSh()
 }
 
 func main() {
